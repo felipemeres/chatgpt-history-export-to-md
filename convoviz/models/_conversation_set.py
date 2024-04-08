@@ -5,11 +5,12 @@ Groups conversations by week, month, and year, etc.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from orjson import OPT_INDENT_2, dumps, loads
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from tqdm import tqdm
 
 from convoviz.data_analysis import generate_week_barplot, generate_wordcloud
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
 
     from ._message import AuthorRole
 
+logging.basicConfig(level=logging.INFO, filename='error.log', filemode='w',
+                    format='%(name)s - %(levelname)s - %(message)s')
 
 class ConversationSet(BaseModel):
     """Stores a set of conversations."""
@@ -40,11 +43,19 @@ class ConversationSet(BaseModel):
         return {convo.conversation_id: convo for convo in self.array}
 
     @classmethod
-    def from_json(cls, filepath: Path | str) -> ConversationSet:
-        """Load from a JSON file, containing an array of conversations."""
+    def from_json(cls, filepath: Path | str) -> 'ConversationSet':
         filepath = Path(filepath)
+        conversations = []
         with filepath.open(encoding="utf-8") as file:
-            return cls(array=loads(file.read()))
+            data = loads(file.read())
+            for item in data:
+                try:
+                    conversation = Conversation.model_validate(item)
+                    conversations.append(conversation)
+                except ValidationError as e:
+                    logging.error(f"Error parsing conversation: {e}")
+                    pass
+        return cls(array=conversations)
 
     @classmethod
     def from_zip(cls, filepath: Path | str) -> ConversationSet:
