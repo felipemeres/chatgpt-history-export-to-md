@@ -5,9 +5,10 @@ object path : conversations.json -> conversation -> mapping -> mapping node -> m
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+import json
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional, Union, List
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, validator
 
 from convoviz.utils import DEFAULT_MESSAGE_CONFIGS, MessageConfigs, code_block
 
@@ -15,6 +16,30 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 AuthorRole = Literal["user", "assistant", "system", "tool"]
+class ImageAssetPointer(BaseModel):
+    content_type: str
+    asset_pointer: str
+    size_bytes: int
+    width: int
+    height: int
+    fovea: Any
+    metadata: Any
+
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, values):
+        # Serialize metadata if it's a dictionary
+        if isinstance(values.get('metadata'), dict):
+            values['metadata'] = json.dumps(values['metadata'])
+        elif values.get('metadata') is None:
+            values['metadata'] = "{}"
+        # Ensure fovea is a string, even if it's None
+        if values.get('fovea') is None:
+            values['fovea'] = ""
+        return values
 
 
 class MessageAuthor(BaseModel):
@@ -29,9 +54,18 @@ class MessageContent(BaseModel):
     """Type of the `content` field in a `message`."""
 
     content_type: str
-    parts: list[str] | None = None
+    parts: List[Union[str, ImageAssetPointer]] = []
     text: str | None = None
     result: str | None = None
+    
+    @validator('parts', pre=True, each_item=True)
+    def validate_parts(cls, v, values, **kwargs):
+        if isinstance(v, dict):
+            return ImageAssetPointer(**v)
+        elif isinstance(v, str):
+            return v
+        else:
+            raise ValueError(f"Invalid type for parts: {type(v)}")
 
 
 class MessageMetadata(BaseModel):
